@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<link href='http://fonts.googleapis.com/css?family=Roboto:500' rel='stylesheet' type='text/css'>
+		<style type="text/css">
+		a
+		{
+			color:#CCCCCC;
+		}
+
+		#info
+		{
+			font-family:'Roboto',sans-serif;
+			font-size:14px;
+			line-height:16px;
+			position:absolute;
+			left:8px;
+			top:8px;
+			color:#FFFFFF;
+			opacity:.6;
+		}
+
+		#canvas
+		{
+			position:absolute;
+			left:0px;
+			top:0px;
+		}
+		</style>
+	</head>
+	<body>
+		<canvas id="canvas"></canvas>
+		<div id="info"></div>
+
+		<script id="vert" type="x-shader/x-vertex">
+			attribute vec3 att_pos;
+			attribute vec3 att_nor;
+			attribute vec3 att_col;
+			varying vec3 var_pos;
+			varying vec3 var_nor;
+			varying vec3 var_col;
+			varying mat4 var_mat;
+			uniform mat4 uni_matM;
+			uniform mat4 uni_matV;
+			uniform mat4 uni_matP;
+
+			void main()
+			{
+				var_pos=att_pos;
+				var_nor=att_nor;
+				var_col=att_col;
+				var_mat=uni_matM;
+				gl_Position=uni_matP*uni_matV*uni_matM*vec4(att_pos,1.0);
+			}
+		</script>
+
+		<script id="frag" type="x-shader/x-fragment">
+			precision mediump float;
+
+			varying vec3 var_pos;
+			varying vec3 var_nor;
+			varying vec3 var_col;
+			varying mat4 var_mat;
+			uniform float uni_t;
+			uniform vec2 uni_s;
+			uniform vec2 uni_m;
+			uniform sampler2D uni_tex0;
+			uniform int uni_p;
+			uniform vec3 uni_eye;
+
+			#define v vec2(0.,1.)
+			#define cl(i) clamp(i,0.,1.)
+
+			float rnd(float _s)
+			{
+				return mod(sin(_s*23.48+982.22)*128.11,1.);
+			}
+
+			void main()
+			{
+				vec3 col = v.xxx;
+
+				vec3 nor = normalize((var_mat*vec4(var_nor,0.)).xyz);
+				vec3 eye = normalize((vec4(uni_eye,0.)-var_mat*vec4(var_pos,0.)).xyz);
+				vec3 lig = normalize(vec3(0.,1.,1.));
+
+				float dif = cl(dot(nor,normalize(lig)));
+				float spe = pow(cl(dot(nor,normalize(lig+eye)))*1.,1E2);
+
+				col = (dif*.3+spe)*v.yyy;
+
+				gl_FragColor = vec4(col,1.);
+			}
+		</script>
+
+		<script src="catMAT.js"></script>
+		<script src="catGL.js"></script>
+		<script src="catVert.js"></script>
+
+		<script>
+			var cvs=document.getElementById('canvas');
+			cvs.width=window.innerWidth;
+			cvs.height=window.innerHeight;
+
+			var gl=cvs.getContext('experimental-webgl');
+
+			gl.enable(gl.DEPTH_TEST);
+			gl.enable(gl.CULL_FACE);
+			gl.enable(gl.BLEND);
+			gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.ONE,gl.ONE);
+
+			var prg=CatGL.createProgram("vert","frag");
+			
+			var ob = new CatGL.SegmentDisplay([.5,1,.1],.1,0);
+			ob.set([1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0]);
+//			ob.not();
+
+			var tex=[];
+			CatGL.setTexture("tex.jpg",0);
+
+			var t=0;
+			var mouseX=0;
+			var mouseY=0;
+			var frameTime=[];
+
+			document.onmousemove=function(e)
+			{
+				mouseX=e.clientX-window.innerWidth/2;
+				mouseY=e.clientY-window.innerHeight/2;
+			}
+
+			function disp()
+			{
+				gl.clearColor(0.,0.,0.,1.);
+				gl.clearDepth(1.0);
+				gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+				var camPos=CatMAT.vector(CatMAT.rotate([1,0,0],mouseY*.0005,CatMAT.rotate([0,1,0],mouseX*.0005)),[0,0,2]);
+				var matM;
+				var matMb=CatMAT.rotate(CatMAT.vector(CatMAT.rotate([.4,0,.6],t*.0031),[.2,1,0]),t*.005);
+				var matV=CatMAT.lookAt(camPos,[0,0,0],[0,1,0]);
+				var matP=CatMAT.perspective(70,cvs.width/cvs.height,.1,100);
+
+				gl.uniform1f(gl.getUniformLocation(prg,'uni_t'),t);
+				gl.uniform2fv(gl.getUniformLocation(prg,'uni_s'),[cvs.width,cvs.height]);
+				gl.uniform3fv(gl.getUniformLocation(prg,'uni_eye'),camPos);
+				gl.uniformMatrix4fv(gl.getUniformLocation(prg,'uni_matV'),false,matV);
+				gl.uniformMatrix4fv(gl.getUniformLocation(prg,'uni_matP'),false,matP);
+
+				gl.activeTexture(gl.TEXTURE0);
+				gl.bindTexture(gl.TEXTURE_2D, tex[0]);
+				gl.uniform1i(gl.getUniformLocation(prg,'uni_tex0'),0);
+
+				matM=matMb;
+				gl.uniformMatrix4fv(gl.getUniformLocation(prg,'uni_matM'),false,matM);
+
+				gl.uniform1i(gl.getUniformLocation(prg,'uni_p'),0);
+
+				ob.draw();
+
+				gl.flush();
+
+				t++;
+				info();
+				setTimeout("disp()",1000/60);
+			}
+			disp();
+
+			function calcFps()
+			{
+				frameTime[t]=(+new Date());
+				if(t-60<0)return (".....").substring(0,(t/3)%5+1);
+				return Math.floor(1000*60/(frameTime[t]-frameTime[t-60])*100)/100;
+			}
+
+			function info()
+			{
+				var str="";
+				str+="<span style=\"font-size:24px\">Bread Texture</span><br>";
+				str+="Resolution : "+window.innerWidth+" x "+window.innerHeight+"<br>";
+				str+="Frame : "+t+"<br>";
+				str+="FPS : "+calcFps()+"<br>";
+				str+="Texture by <a href='http://twitter.com/Jugem_T'>@Jugem_T</a><br>";
+				str+="<a href='http://twitter.com/FMS_Cat'>@FMS_Cat</a>";
+				document.getElementById("info").innerHTML=str;
+			}
+
+			function poly(_i,_c)
+			{
+				l=pos.length/3;
+				i=_i.length;
+				for(var c=6;c<i;c+=3){
+					for(var c2=0;c2<3;c2++){
+						pos.push(_i[c2]);
+					}
+					for(var c2=c-3;c2<c+3;c2++){
+						pos.push(_i[c2]);
+					}
+
+					var v=M.cross([_i[c-3]-_i[0],_i[c-2]-_i[1],_i[c-1]-_i[2]],[_i[c]-_i[c-3],_i[c+1]-_i[c-2],_i[c+2]-_i[c-1]]);
+					for(var c2=0;c2<3;c2++){
+						nor.push(v[0]);nor.push(v[1]);nor.push(v[2]);
+					}
+
+					for(var c2=0;c2<3;c2++){
+						index.push(l+c-6+c2);
+						switch(c2){
+							case 0:col.push(1,1);break;
+							case 1:col.push(0,c==6?1:0);break;
+							case 2:col.push(c==6?0:1,0);break;
+						}
+						col.push(_c);
+					}
+				}
+			}
+
+			function polyExt(_i,_e,_c)
+			{
+				var a=[_i[0],_i[1],_e],l=_i.length;
+				for(var c=2;c<l;c+=2)
+				{
+					a.push(_i[c],_i[c+1],_e);
+				}
+				poly(a,_c);
+
+				a=[_i[0],_i[1],-_e];
+				for(var c=l-2;2<=c;c-=2)
+				{
+					a.push(_i[c],_i[c+1],-_e);
+				}
+				poly(a,_c);
+
+				for(var c=0;c<l;c+=2)
+				{
+					poly([_i[c],_i[c+1],-_e,_i[(c+2)%l],_i[(c+2)%l+1],-_e,_i[(c+2)%l],_i[(c+2)%l+1],_e,_i[c],_i[c+1],_e],_c);
+				}
+			}
+
+			function polyCube(_v,_c)
+			{
+				var w=_v[0]/2,h=_v[1]/2,d=_v[2]/2;
+				poly([w,h,d,-w,h,d,-w,-h,d,w,-h,d],_c);
+				poly([-w,h,-d,w,h,-d,w,-h,-d,-w,-h,-d],_c);
+				poly([w,h,-d,w,h,d,w,-h,d,w,-h,-d],_c);
+				poly([-w,h,d,-w,h,-d,-w,-h,-d,-w,-h,d],_c);
+				poly([w,h,-d,-w,h,-d,-w,h,d,w,h,d],_c);
+				poly([w,-h,d,-w,-h,d,-w,-h,-d,w,-h,-d],_c);
+			}
+
+			function poly12hedron(_l,_c)
+			{
+				var r=1/Math.cos(3*Math.PI/10)*.5*_l;
+				for(var c=0;c<12;c++)
+				{
+					var p=[];
+					for(var cc=0;cc<5;cc++)
+					{
+						var v=[0,r,0];
+						v=M.vector(M.translate([0,0,r*((1+Math.sqrt(5))/2+1)/2]),v);
+						v=M.vector(M.rotate([0,0,1],cc*Math.PI*2/5),v);
+						if(0<c%6)
+						{
+							v=M.vector(M.rotate([0,0,1],Math.PI),v);
+							v=M.vector(M.rotate([1,0,0],Math.acos(1/Math.sqrt(5))),v);
+							v=M.vector(M.rotate([0,0,1],c*Math.PI*2/5),v);
+						}
+						if(5<c)
+						{
+							v=M.vector(M.rotate([0,0,1],Math.PI),v);
+							v=M.vector(M.rotate([0,1,0],Math.PI),v);
+						}
+						p.push(v[0],v[1],v[2]);
+					}
+					poly(p,_c);
+				}
+			}
+
+			function poly16seg(_p,_v,_s,_c)
+			{
+				if(_p[0]==1){d([-.97,.98,-.69,.85,-.01,.85,-.01,1,-.9,1]);}
+				if(_p[1]==1){d([.97,.98,.9,1,.01,1,.01,.85,.69,.85]);}
+				if(_p[2]==1){d([.98,.97,.7,.84,.7,.085,.9,.01,1,.05,1,.95]);}
+				if(_p[3]==1){d([.98,-.97,1,-.95,1,-.05,.9,-.01,.7,-.085,.7,-.84]);}
+				if(_p[4]==1){d([.97,-.98,.69,-.85,.01,-.85,.01,-1,.9,-1]);}
+				if(_p[5]==1){d([-.97,-.98,-.9,-1,-.01,-1,-.01,-.85,-.69,-.85]);}
+				if(_p[6]==1){d([-.98,-.97,-.7,-.84,-.7,-.085,-.9,-.01,-1,-.05,-1,-.95]);}
+				if(_p[7]==1){d([-.98,.97,-1,.95,-1,.05,-.9,.01,-.7,.085,-.7,.84]);}
+				if(_p[8]==1){d([-.89,0,-.69,-.075,-.01,-.075,-.01,.075,-.69,.075]);}
+				if(_p[9]==1){d([.89,0,.69,.075,.01,.075,.01,-.075,.69,-.075]);}
+				if(_p[10]==1){d([-.68,.84,-.68,.55,-.2,.085,-.12,.085,-.17,.35]);}
+				if(_p[11]==1){d([.15,.84,-.15,.84,-.15,.35,-.1,.085,.1,.085,.15,.35]);}
+				if(_p[12]==1){d([.68,.84,.17,.35,.12,.085,.2,.085,.68,.55]);}
+				if(_p[13]==1){d([.68,-.84,.68,-.55,.2,-.085,.12,-.085,.17,-.35]);}
+				if(_p[14]==1){d([.15,-.84,.15,-.35,.1,-.085,-.1,-.085,-.15,-.35,-.15,-.84]);}
+				if(_p[15]==1){d([-.68,-.84,-.17,-.35,-.12,-.085,-.2,-.085,-.68,-.55]);}
+
+				function d(i)
+				{
+					var a=[];
+					for(var c=0;c<i.length;c+=2)
+					{
+						a.push(i[c]*_v[0]+i[c+1]*_v[1]*_s,i[c+1]*_v[1]);
+					}
+					polyExt(a,_v[2],_c);
+				}
+			}
+
+			function sphere(_x,_y,_r,_c)
+			{
+				var l=pos.length/3,
+				x=Math.floor(_x),
+				y=Math.floor(_y);
+				pos.push(0,_r,0);
+				nor.push(0,_r,0);
+				col.push(_c,_c,_c);
+				for(var cy=1;cy<y-1;cy++)
+				{
+					for(var cx=0;cx<x;cx++)
+					{
+						var v=[0,_r,0];
+						v=M.vector(M.rotate([0,0,1],cy/(y-1)*Math.PI),v);
+						v=M.vector(M.rotate([0,1,0],cx/(x)*Math.PI*2),v);
+						pos.push(v[0],v[1],v[2]);
+						nor.push(v[0],v[1],v[2]);
+						col.push(_c,_c,_c);
+					}
+				}
+				pos.push(0,-_r,0);
+				nor.push(0,-_r,0);
+				col.push(_c,_c,_c);
+
+				for(var c=0;c<x;c++)
+				{
+					index.push(l,l+1+c%x,l+1+(c+1)%x);
+				}
+				for(var cy=0;cy<y-3;cy++)
+				{
+					for(var cx=0;cx<x;cx++)
+					{
+						index.push(l+1+x*cy+(cx)%x,l+1+x*(cy+1)+(cx+1)%x,l+1+x*cy+(cx+1)%x);
+						index.push(l+1+x*cy+(cx)%x,l+1+x*(cy+1)+(cx)%x,l+1+x*(cy+1)+(cx+1)%x);
+					}
+				}
+				for(var c=0;c<x;c++)
+				{
+					index.push(l+x*(y-2)+1,l+x*(y-3)+1+(c+1)%x,l+x*(y-3)+1+(c)%x);
+				}
+			}
+
+			function torus(_x,_y,_o,_i,_c)
+			{
+				var l=pos.length/3,
+				x=Math.floor(_x),
+				y=Math.floor(_y);
+				for(var c=0;c<y;c++)
+				{
+					var vo=[0,_o,0];
+					var mo=M.rotate([0,0,1],Math.PI*2/y*c);
+					for(var cx=0;cx<x;cx++)
+					{
+						var v=[0,_i,0];
+						v=M.vector(M.rotate([1,0,0],Math.PI*2/x*cx),v);
+						var vp=M.vector(mo,M.add(v,vo));
+						var vn=M.vector(mo,v);
+						pos.push(vp[0],vp[1],vp[2]);
+						nor.push(vn[0],vn[1],vn[2]);
+						col.push(_c,_c,_c);
+					}
+				}
+
+				for(var c=0;c<y;c++)
+				{
+					for(var cx=0;cx<x;cx++)
+					{
+						index.push(l+cx+c*x,l+(cx+1)%x+(c+1)%y*x,l+(cx+1)%x+c*x);
+						index.push(l+cx+c*x,l+cx+(c+1)%y*x,l+(cx+1)%x+(c+1)%y*x);
+					}
+				}
+			}
+
+			function resize()
+			{
+				var w=window.innerWidth;
+				var h=window.innerHeight;
+				cvs.width=w;
+				cvs.height=h;
+				gl.viewport(0,0,w,h);
+			}
+			resize();
+			window.onresize=resize;
+		</script>
+	</body>
+</html>
